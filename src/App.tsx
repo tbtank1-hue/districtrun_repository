@@ -49,9 +49,15 @@ function App() {
   // View state - toggle between landing page and dashboard
   const [showHome, setShowHome] = useState(false);
 
-  // New state for enhanced features
+  // Community stats state - pulled from database
   const [showMemberCount, setShowMemberCount] = useState(false);
-  const [memberCount] = useState(247); // Hardcoded for now, can be dynamic
+  const [communityStats, setCommunityStats] = useState({
+    waitlist_count: 0,
+    total_miles: 0,
+    connected_users: 0,
+    total_activities: 0
+  });
+  const [statsLoading, setStatsLoading] = useState(true);
 
   // ============================================================================
   // AUTHENTICATION EFFECTS
@@ -124,6 +130,33 @@ function App() {
   useEffect(() => {
     const timer = setTimeout(() => setShowMemberCount(true), 500);
     return () => clearTimeout(timer);
+  }, []);
+
+  /**
+   * Fetch real community stats from database
+   * Updates on component mount with live data from Supabase
+   */
+  useEffect(() => {
+    async function fetchCommunityStats() {
+      try {
+        const { data, error } = await supabase.rpc('get_community_stats');
+
+        if (error) {
+          console.error('Error fetching community stats:', error);
+          return;
+        }
+
+        if (data) {
+          setCommunityStats(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch community stats:', err);
+      } finally {
+        setStatsLoading(false);
+      }
+    }
+
+    fetchCommunityStats();
   }, []);
 
   // ============================================================================
@@ -329,11 +362,13 @@ function App() {
           Premium running gear released monthly. Access determined by miles logged. Connect Strava, put in the work, earn exclusive pieces.
         </p>
 
-        {/* Member count badge */}
+        {/* Member count badge - dynamically loaded from database */}
         <div className={`mb-8 transition-all duration-700 ${showMemberCount ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           <div className="inline-flex items-center gap-2 px-6 py-3 bg-black text-white text-xs tracking-wider uppercase">
             <div className="w-2 h-2 bg-[#ff6b35] rounded-full animate-pulse" />
-            <span>{memberCount}+ Runners Waiting</span>
+            <span>
+              {statsLoading ? '...' : `${communityStats.waitlist_count}+`} Runners Waiting
+            </span>
           </div>
         </div>
 
@@ -492,22 +527,31 @@ function App() {
         <div className="max-w-[1400px] mx-auto">
           <h2 className="text-[clamp(36px,6vw,72px)] font-light mb-20 tracking-[-2px] text-center">Built on Community</h2>
 
+          {/* Dynamic community stats - pulled from Supabase */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-20">
             <div className="text-center p-8 border border-[#e5e5e5] transition-all hover:border-black">
-              <div className="text-5xl font-light mb-4 text-[#ff6b35]">{memberCount}+</div>
+              <div className="text-5xl font-light mb-4 text-[#ff6b35]">
+                {statsLoading ? '...' : `${communityStats.waitlist_count}+`}
+              </div>
               <div className="text-sm uppercase tracking-wider text-[#666]">Runners Waiting</div>
             </div>
             <div className="text-center p-8 border border-[#e5e5e5] transition-all hover:border-black">
-              <div className="text-5xl font-light mb-4 text-[#ff6b35]">5,280+</div>
+              <div className="text-5xl font-light mb-4 text-[#ff6b35]">
+                {statsLoading ? '...' : `${Math.round(communityStats.total_miles).toLocaleString()}+`}
+              </div>
               <div className="text-sm uppercase tracking-wider text-[#666]">Miles Logged</div>
             </div>
             <div className="text-center p-8 border border-[#e5e5e5] transition-all hover:border-black">
-              <div className="text-5xl font-light mb-4 text-[#ff6b35]">100%</div>
-              <div className="text-sm uppercase tracking-wider text-[#666]">DC Based</div>
+              <div className="text-5xl font-light mb-4 text-[#ff6b35]">
+                {statsLoading ? '...' : `${communityStats.connected_users}`}
+              </div>
+              <div className="text-sm uppercase tracking-wider text-[#666]">Connected Runners</div>
             </div>
             <div className="text-center p-8 border border-[#e5e5e5] transition-all hover:border-black">
-              <div className="text-5xl font-light mb-4 text-[#ff6b35]">0</div>
-              <div className="text-sm uppercase tracking-wider text-[#666]">Raffles Needed</div>
+              <div className="text-5xl font-light mb-4 text-[#ff6b35]">
+                {statsLoading ? '...' : `${communityStats.total_activities.toLocaleString()}`}
+              </div>
+              <div className="text-sm uppercase tracking-wider text-[#666]">Runs Tracked</div>
             </div>
           </div>
 
