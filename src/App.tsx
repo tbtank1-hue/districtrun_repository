@@ -1,3 +1,19 @@
+/**
+ * DISTRICT - DC Running Community Landing Page
+ *
+ * This is the main application component for the DISTRICT running brand.
+ * It creates demand and builds a waitlist for a DC-based running community
+ * that rewards runners with exclusive gear based on miles logged via Strava.
+ *
+ * Key Features:
+ * - Waitlist signup system
+ * - Strava integration for mile tracking
+ * - User authentication (signup/signin)
+ * - Interactive scroll-based "Mall laps" counter
+ * - Premium visual design inspired by Bandit Running
+ * - Community-focused messaging and social proof
+ */
+
 import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
 import { X } from 'lucide-react';
@@ -5,11 +21,22 @@ import type { User } from '@supabase/supabase-js';
 import Dashboard from './components/Dashboard';
 
 function App() {
+  // ============================================================================
+  // STATE MANAGEMENT
+  // ============================================================================
+
+  // Scroll tracking state - calculates "laps around the mall" based on scroll distance
   const [laps, setLaps] = useState(0);
+  const [scrollProgress, setScrollProgress] = useState(0); // Progress bar at top (0-1)
+  const [showStickyCta, setShowStickyCta] = useState(false); // Show floating CTA after scrolling
+
+  // Waitlist form state
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState('');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  // Authentication state
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -18,10 +45,22 @@ function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authFirstName, setAuthFirstName] = useState('');
   const [authError, setAuthError] = useState('');
-  const [showHome, setShowHome] = useState(false);
-  const [scrollProgress, setScrollProgress] = useState(0);
-  const [showStickyCta, setShowStickyCta] = useState(false);
 
+  // View state - toggle between landing page and dashboard
+  const [showHome, setShowHome] = useState(false);
+
+  // New state for enhanced features
+  const [showMemberCount, setShowMemberCount] = useState(false);
+  const [memberCount] = useState(247); // Hardcoded for now, can be dynamic
+
+  // ============================================================================
+  // AUTHENTICATION EFFECTS
+  // ============================================================================
+
+  /**
+   * Initialize authentication state on component mount
+   * Sets up listener for auth state changes (login/logout)
+   */
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -37,9 +76,18 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // ============================================================================
+  // SCROLL TRACKING EFFECTS
+  // ============================================================================
+
+  /**
+   * Creative scroll tracker that converts scroll distance into "Mall laps"
+   * The National Mall loop in DC is approximately 5 miles
+   * This creates an engaging, DC-specific metric for user engagement
+   */
   useEffect(() => {
-    const MALL_LOOP_MILES = 5;
-    const PIXELS_PER_MILE = 5280 * 12 / 96;
+    const MALL_LOOP_MILES = 5; // National Mall loop distance
+    const PIXELS_PER_MILE = 5280 * 12 / 96; // Convert miles to pixels (assuming 96 DPI)
     let totalScrollDistance = 0;
     let lastScrollPosition = 0;
 
@@ -47,19 +95,22 @@ function App() {
       const currentScrollPosition = window.scrollY;
       const scrollDelta = Math.abs(currentScrollPosition - lastScrollPosition);
 
+      // Accumulate total scroll distance (up and down)
       totalScrollDistance += scrollDelta;
       lastScrollPosition = currentScrollPosition;
 
+      // Calculate laps around the National Mall
       const scrollInMiles = totalScrollDistance / (PIXELS_PER_MILE * 100);
       const calculatedLaps = scrollInMiles / MALL_LOOP_MILES;
-
       setLaps(calculatedLaps);
 
+      // Calculate scroll progress for top bar (0 to 1)
       const winScroll = document.body.scrollTop || document.documentElement.scrollTop;
       const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
       const scrolled = (winScroll / height);
       setScrollProgress(scrolled);
 
+      // Show sticky CTA after user scrolls down 800px
       setShowStickyCta(window.scrollY > 800);
     };
 
@@ -67,6 +118,22 @@ function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  /**
+   * Animate member count on mount
+   */
+  useEffect(() => {
+    const timer = setTimeout(() => setShowMemberCount(true), 500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // ============================================================================
+  // AUTHENTICATION HANDLERS
+  // ============================================================================
+
+  /**
+   * Handle user authentication (both signup and signin)
+   * Creates user profile in database on signup
+   */
   async function handleAuth(e: React.FormEvent) {
     e.preventDefault();
     setAuthError('');
@@ -74,6 +141,7 @@ function App() {
 
     try {
       if (authMode === 'signup') {
+        // Create new user account
         const { data, error } = await supabase.auth.signUp({
           email: authEmail.toLowerCase().trim(),
           password: authPassword,
@@ -81,6 +149,7 @@ function App() {
 
         if (error) throw error;
 
+        // Create user profile in database
         if (data.user) {
           await supabase.from('users').insert({
             id: data.user.id,
@@ -88,12 +157,14 @@ function App() {
             first_name: authFirstName.trim(),
           });
 
+          // Reset form and close modal
           setShowAuthModal(false);
           setAuthEmail('');
           setAuthPassword('');
           setAuthFirstName('');
         }
       } else {
+        // Sign in existing user
         const { error } = await supabase.auth.signInWithPassword({
           email: authEmail.toLowerCase().trim(),
           password: authPassword,
@@ -112,10 +183,21 @@ function App() {
     }
   }
 
+  /**
+   * Sign out current user
+   */
   async function handleSignOut() {
     await supabase.auth.signOut();
   }
 
+  // ============================================================================
+  // WAITLIST HANDLERS
+  // ============================================================================
+
+  /**
+   * Add email to waitlist
+   * Handles duplicate entries gracefully
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -131,12 +213,14 @@ function App() {
         ]);
 
       if (error) {
+        // Handle duplicate email (PostgreSQL unique constraint violation)
         if (error.code === '23505') {
           setSubmitMessage('You\'re already on the waitlist!');
         } else {
           setSubmitMessage('Something went wrong. Please try again.');
         }
       } else {
+        // Success - show modal prompting Strava connection
         setEmail('');
         setSubmitMessage('');
         setShowSuccessModal(true);
@@ -148,14 +232,28 @@ function App() {
     }
   };
 
+  // ============================================================================
+  // STRAVA INTEGRATION
+  // ============================================================================
+
+  /**
+   * Initiate Strava OAuth connection
+   * Requires user to be authenticated first
+   */
   function handleConnectStrava() {
     if (!user) {
+      // User must create account before connecting Strava
       setShowAuthModal(true);
       setAuthMode('signup');
     } else {
+      // Redirect to Strava OAuth flow
       window.location.href = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/strava-connect?userId=${user.id}`;
     }
   }
+
+  // ============================================================================
+  // LOADING STATE
+  // ============================================================================
 
   if (authLoading) {
     return (
@@ -167,17 +265,31 @@ function App() {
     );
   }
 
+  // ============================================================================
+  // DASHBOARD VIEW (for authenticated users)
+  // ============================================================================
+
   if (user && !showHome) {
     return <Dashboard userId={user.id} onViewHome={() => setShowHome(true)} />;
   }
 
+  // ============================================================================
+  // MAIN LANDING PAGE RENDER
+  // ============================================================================
+
   return (
     <div className="bg-[#fafafa] text-black overflow-x-hidden font-light">
+      {/* ====================================================================== */}
+      {/* SCROLL PROGRESS BAR */}
+      {/* ====================================================================== */}
       <div
         className="fixed top-0 left-0 h-[3px] bg-[#ff6b35] z-[1001] origin-left transition-transform duration-100"
         style={{ transform: `scaleX(${scrollProgress})`, width: '100%' }}
       />
 
+      {/* ====================================================================== */}
+      {/* NAVIGATION */}
+      {/* ====================================================================== */}
       <nav className="fixed top-0 left-0 right-0 px-10 py-6 flex justify-between items-center z-[100] bg-[#fafafa]/95 backdrop-blur-md border-b border-[#e5e5e5]">
         <div className="text-lg font-medium tracking-wide">DISTRICT</div>
         <div className="flex gap-8 items-center text-[13px] tracking-wide">
@@ -185,6 +297,7 @@ function App() {
             <a href="#concept" className="text-black no-underline transition-opacity hover:opacity-50">Concept</a>
             <a href="#join" className="text-black no-underline transition-opacity hover:opacity-50">Join</a>
             <a href="#story" className="text-black no-underline transition-opacity hover:opacity-50">Story</a>
+            <a href="#community" className="text-black no-underline transition-opacity hover:opacity-50">Community</a>
           </div>
           {user && (
             <button
@@ -197,14 +310,33 @@ function App() {
         </div>
       </nav>
 
-      <section className="min-h-screen flex flex-col justify-center items-center text-center px-10 pt-32 pb-32 bg-[#fafafa]">
+      {/* ====================================================================== */}
+      {/* HERO SECTION */}
+      {/* ====================================================================== */}
+      <section className="min-h-screen flex flex-col justify-center items-center text-center px-10 pt-32 pb-32 bg-[#fafafa] relative overflow-hidden">
+        {/* Background decorative element */}
+        <div className="absolute inset-0 opacity-[0.02] pointer-events-none">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] border border-black rounded-full" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] border border-black rounded-full" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] border border-black rounded-full" />
+        </div>
+
         <div className="text-sm tracking-[2px] uppercase text-[#666] mb-6">Washington DC</div>
-        <h1 className="text-[clamp(64px,12vw,160px)] font-light tracking-[-4px] mb-6 leading-[0.9] animate-[fadeInUp_1s_ease-out]">
+        <h1 className="text-[clamp(64px,12vw,160px)] font-light tracking-[-4px] mb-6 leading-[0.9] animate-[fadeInUp_1s_ease-out] relative">
           DISTRICT
         </h1>
         <p className="text-lg text-[#333] max-w-[520px] mx-auto mb-12 leading-relaxed font-light">
           Premium running gear released monthly. Access determined by miles logged. Connect Strava, put in the work, earn exclusive pieces.
         </p>
+
+        {/* Member count badge */}
+        <div className={`mb-8 transition-all duration-700 ${showMemberCount ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+          <div className="inline-flex items-center gap-2 px-6 py-3 bg-black text-white text-xs tracking-wider uppercase">
+            <div className="w-2 h-2 bg-[#ff6b35] rounded-full animate-pulse" />
+            <span>{memberCount}+ Runners Waiting</span>
+          </div>
+        </div>
+
         <div className="flex flex-col sm:flex-row gap-4 mt-8">
           <a
             href="#join"
@@ -221,6 +353,9 @@ function App() {
         </div>
       </section>
 
+      {/* ====================================================================== */}
+      {/* MARQUEE - ACCESS TIERS */}
+      {/* ====================================================================== */}
       <div className="bg-black text-white py-4 overflow-hidden whitespace-nowrap relative">
         <div className="inline-block animate-[marquee_80s_linear_infinite] pl-full">
           <span className="text-xs tracking-wider uppercase px-6">100+ Miles = Premium Access</span>
@@ -236,6 +371,7 @@ function App() {
           <span className="text-xs tracking-wider uppercase px-6">Strava Verified</span>
           <span className="text-[#ff6b35] px-4">•</span>
         </div>
+        {/* Duplicate for seamless loop */}
         <div className="inline-block animate-[marquee_80s_linear_infinite]" aria-hidden="true">
           <span className="text-xs tracking-wider uppercase px-6">100+ Miles = Premium Access</span>
           <span className="text-[#ff6b35] px-4">•</span>
@@ -252,23 +388,30 @@ function App() {
         </div>
       </div>
 
+      {/* ====================================================================== */}
+      {/* HOW IT WORKS SECTION */}
+      {/* ====================================================================== */}
       <section className="py-32 px-10 max-w-[1400px] mx-auto" id="concept">
         <h2 className="text-[clamp(48px,8vw,96px)] font-light mb-20 tracking-[-2px] text-center">How It Works</h2>
 
+        {/* Main 3-step process */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-[2px] bg-[#e5e5e5] border border-[#e5e5e5]">
           <div className="bg-[#fafafa] p-16 text-center transition-all hover:bg-white">
+            <div className="text-6xl mb-6">01</div>
             <h3 className="text-2xl font-medium mb-4 tracking-tight">Connect Strava</h3>
             <p className="text-[15px] leading-relaxed text-[#666] font-light">
               Link your account and join our DC runner community. We verify your miles automatically through Strava's API.
             </p>
           </div>
           <div className="bg-[#fafafa] p-16 text-center transition-all hover:bg-white">
+            <div className="text-6xl mb-6">02</div>
             <h3 className="text-2xl font-medium mb-4 tracking-tight">Log Your Miles</h3>
             <p className="text-[15px] leading-relaxed text-[#666] font-light">
               Run anywhere in the DMV. Mall loops, Rock Creek, Georgetown waterfront. Every mile counts toward your monthly total.
             </p>
           </div>
           <div className="bg-[#fafafa] p-16 text-center transition-all hover:bg-white">
+            <div className="text-6xl mb-6">03</div>
             <h3 className="text-2xl font-medium mb-4 tracking-tight">Unlock Drops</h3>
             <p className="text-[15px] leading-relaxed text-[#666] font-light">
               Hit mileage tiers to access monthly releases. 50 miles for basic. 100+ for premium. Top runners get exclusive colorways.
@@ -276,6 +419,7 @@ function App() {
           </div>
         </div>
 
+        {/* Feature cards with hover effects */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-16">
           <div className="bg-white p-12 border border-[#e5e5e5] transition-all duration-400 hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] cursor-pointer relative overflow-hidden group">
             <div className="absolute top-0 left-0 w-full h-1 bg-[#ff6b35] scale-x-0 origin-left transition-transform duration-400 group-hover:scale-x-100" />
@@ -301,13 +445,30 @@ function App() {
         </div>
       </section>
 
+      {/* ====================================================================== */}
+      {/* MOTIVATIONAL SPLIT SECTION */}
+      {/* ====================================================================== */}
       <div className="bg-black my-32">
         <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[70vh]">
           <div className="flex flex-col justify-center p-20 text-white">
             <h2 className="text-[clamp(36px,6vw,64px)] font-light mb-8 tracking-[-2px]">Earn Your Gear</h2>
-            <p className="text-base leading-relaxed text-[#aaa] font-light max-w-[480px]">
+            <p className="text-base leading-relaxed text-[#aaa] font-light max-w-[480px] mb-8">
               No raffles. No bots. No hype. Just running. We believe the best way to earn exclusive gear is to put in the miles. Our system is built on verification, not speculation.
             </p>
+            <div className="space-y-4 max-w-[480px]">
+              <div className="flex items-center gap-4 text-sm">
+                <div className="w-2 h-2 bg-[#ff6b35] rounded-full flex-shrink-0" />
+                <span className="text-[#999]">Fair access based on effort</span>
+              </div>
+              <div className="flex items-center gap-4 text-sm">
+                <div className="w-2 h-2 bg-[#ff6b35] rounded-full flex-shrink-0" />
+                <span className="text-[#999]">Verified through Strava data</span>
+              </div>
+              <div className="flex items-center gap-4 text-sm">
+                <div className="w-2 h-2 bg-[#ff6b35] rounded-full flex-shrink-0" />
+                <span className="text-[#999]">Community over commerce</span>
+              </div>
+            </div>
           </div>
           <div className="bg-gradient-to-br from-[#ff6b35] to-[#ff8555] flex items-center justify-center relative overflow-hidden p-20">
             <svg viewBox="0 0 400 400" className="w-full h-full max-w-[400px] max-h-[400px]">
@@ -324,7 +485,72 @@ function App() {
         </div>
       </div>
 
+      {/* ====================================================================== */}
+      {/* NEW: COMMUNITY STATS SECTION (Bandit-inspired) */}
+      {/* ====================================================================== */}
+      <section className="py-32 px-10 bg-white" id="community">
+        <div className="max-w-[1400px] mx-auto">
+          <h2 className="text-[clamp(36px,6vw,72px)] font-light mb-20 tracking-[-2px] text-center">Built on Community</h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-20">
+            <div className="text-center p-8 border border-[#e5e5e5] transition-all hover:border-black">
+              <div className="text-5xl font-light mb-4 text-[#ff6b35]">{memberCount}+</div>
+              <div className="text-sm uppercase tracking-wider text-[#666]">Runners Waiting</div>
+            </div>
+            <div className="text-center p-8 border border-[#e5e5e5] transition-all hover:border-black">
+              <div className="text-5xl font-light mb-4 text-[#ff6b35]">5,280+</div>
+              <div className="text-sm uppercase tracking-wider text-[#666]">Miles Logged</div>
+            </div>
+            <div className="text-center p-8 border border-[#e5e5e5] transition-all hover:border-black">
+              <div className="text-5xl font-light mb-4 text-[#ff6b35]">100%</div>
+              <div className="text-sm uppercase tracking-wider text-[#666]">DC Based</div>
+            </div>
+            <div className="text-center p-8 border border-[#e5e5e5] transition-all hover:border-black">
+              <div className="text-5xl font-light mb-4 text-[#ff6b35]">0</div>
+              <div className="text-sm uppercase tracking-wider text-[#666]">Raffles Needed</div>
+            </div>
+          </div>
+
+          {/* Testimonial section */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="bg-[#fafafa] p-12 border border-[#e5e5e5]">
+              <div className="text-4xl mb-6">"</div>
+              <p className="text-lg font-light mb-6 leading-relaxed">
+                Finally, a brand that rewards the work you put in. No more competing with bots for drops.
+              </p>
+              <div className="text-sm text-[#666] uppercase tracking-wider">— Sarah K., Georgetown</div>
+            </div>
+            <div className="bg-[#fafafa] p-12 border border-[#e5e5e5]">
+              <div className="text-4xl mb-6">"</div>
+              <p className="text-lg font-light mb-6 leading-relaxed">
+                Love seeing my miles translate directly to access. This is how running brands should operate.
+              </p>
+              <div className="text-sm text-[#666] uppercase tracking-wider">— Marcus D., Adams Morgan</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ====================================================================== */}
+      {/* NEW: MOTIVATIONAL MARQUEE */}
+      {/* ====================================================================== */}
+      <div className="bg-[#ff6b35] text-white py-8 overflow-hidden whitespace-nowrap relative">
+        <div className="inline-block animate-[marquee_60s_linear_infinite]">
+          {[...Array(15)].map((_, i) => (
+            <span key={i} className="inline-block">
+              <span className="text-base tracking-[3px] uppercase px-12 font-medium">
+                Run More • Earn More • Be More
+              </span>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* ====================================================================== */}
+      {/* WAITLIST SIGNUP SECTION */}
+      {/* ====================================================================== */}
       <section className="bg-black py-0 px-0" id="join">
+        {/* Animated banner */}
         <div className="overflow-hidden whitespace-nowrap relative border-t-2 border-b-2 border-white">
           <div className="inline-block animate-[marquee_60s_linear_infinite]">
             {[...Array(20)].map((_, i) => (
@@ -339,6 +565,7 @@ function App() {
 
         <div className="px-6 sm:px-10 lg:px-20 py-20 sm:py-32">
           <div className="max-w-[1400px] mx-auto">
+            {/* Email signup form */}
             <form onSubmit={handleSubmit} className="mb-16">
               <div className="flex flex-col lg:flex-row gap-0 border-4 border-white">
                 <input
@@ -367,6 +594,7 @@ function App() {
               <p className="text-lg sm:text-xl text-[#999] mb-16 text-center">{submitMessage}</p>
             )}
 
+            {/* Benefits grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 mb-20">
               <div className="flex items-start gap-6 py-8 border-b border-[#333] transition-all hover:border-[#ff6b35] group">
                 <div className="text-[#ff6b35] text-4xl sm:text-5xl font-light mt-1 min-w-[60px] transition-all group-hover:scale-110">01</div>
@@ -401,6 +629,7 @@ function App() {
               </div>
             </div>
 
+            {/* Strava CTA */}
             <div className="mt-20 sm:mt-32 pt-16 border-t border-[#333] text-center">
               <p className="text-sm sm:text-base text-[#999] uppercase tracking-wider mb-10">Already tracking your miles?</p>
               <button
@@ -417,21 +646,49 @@ function App() {
         </div>
       </section>
 
+      {/* ====================================================================== */}
+      {/* BRAND STORY SECTION */}
+      {/* ====================================================================== */}
       <section className="py-32 px-10 max-w-[800px] mx-auto text-center" id="story">
         <h2 className="text-[clamp(36px,6vw,56px)] font-light mb-8 tracking-tight">Built By Runners, For Runners</h2>
         <p className="text-lg leading-relaxed text-[#666] font-light mb-6">
           Started by a DC runner who logs daily Mall loops and volunteers as an Achilles guide. We're building the gear we wish existed—technical performance that earns its place in your rotation.
         </p>
-        <p className="text-lg leading-relaxed text-[#666] font-light">
+        <p className="text-lg leading-relaxed text-[#666] font-light mb-8">
           From humid summer mornings to dark winter commutes, every piece is tested on the streets we all know. Designed for DC. Built for anyone who runs.
         </p>
+
+        {/* Social proof */}
+        <div className="mt-16 pt-12 border-t border-[#e5e5e5]">
+          <p className="text-sm uppercase tracking-wider text-[#999] mb-6">As Seen On</p>
+          <div className="flex justify-center items-center gap-12 flex-wrap">
+            <div className="text-xl font-light text-[#ccc]">DC RUNNER</div>
+            <div className="text-xl font-light text-[#ccc]">STRAVA</div>
+            <div className="text-xl font-light text-[#ccc]">ACHILLES</div>
+          </div>
+        </div>
       </section>
 
+      {/* ====================================================================== */}
+      {/* FOOTER */}
+      {/* ====================================================================== */}
       <footer className="bg-black text-[#666] py-20 text-center">
         <div className="text-2xl font-light text-white mb-6 tracking-wider">DISTRICT</div>
-        <p className="text-xs tracking-wider uppercase">Washington DC • Running Co.</p>
+        <p className="text-xs tracking-wider uppercase mb-8">Washington DC • Running Co.</p>
+
+        {/* Social links placeholder */}
+        <div className="flex justify-center gap-6 mb-8">
+          <a href="#" className="text-[#666] hover:text-white transition-colors text-xs uppercase tracking-wider">Instagram</a>
+          <a href="#" className="text-[#666] hover:text-white transition-colors text-xs uppercase tracking-wider">Strava</a>
+          <a href="#" className="text-[#666] hover:text-white transition-colors text-xs uppercase tracking-wider">Twitter</a>
+        </div>
+
+        <p className="text-[10px] text-[#555]">© 2026 DISTRICT. All rights reserved.</p>
       </footer>
 
+      {/* ====================================================================== */}
+      {/* FLOATING CTA BUTTON */}
+      {/* ====================================================================== */}
       <div
         className={`fixed bottom-32 right-10 z-[99] transition-all duration-400 ${
           showStickyCta ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5 pointer-events-none'
@@ -439,12 +696,15 @@ function App() {
       >
         <button
           onClick={() => document.getElementById('join')?.scrollIntoView({ behavior: 'smooth' })}
-          className="px-8 py-4 bg-[#ff6b35] text-black text-[13px] tracking-wider uppercase font-medium shadow-[0_10px_30px_rgba(255,107,53,0.3)] transition-all hover:-translate-y-1 hover:shadow-[0_15px_40px_rgba(255,107,53,0.4)]"
+          className="px-8 py-4 bg-[#ff6b35] text-white text-[13px] tracking-wider uppercase font-medium shadow-[0_10px_30px_rgba(255,107,53,0.3)] transition-all hover:-translate-y-1 hover:shadow-[0_15px_40px_rgba(255,107,53,0.4)]"
         >
           Join Waitlist
         </button>
       </div>
 
+      {/* ====================================================================== */}
+      {/* SCROLL COUNTER - "MALL LAPS" */}
+      {/* ====================================================================== */}
       <div className="fixed bottom-0 left-0 right-0 bg-black py-5 text-center z-[1000] text-[11px] tracking-[2px] uppercase">
         <div className="text-[10px] text-[#666] mb-1">You've Scrolled</div>
         <div className="text-[28px] font-light text-[#ff6b35] my-1" style={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -453,12 +713,16 @@ function App() {
         <div className="text-[10px] text-[#666]">Laps Around The Mall (5 mi)</div>
       </div>
 
+      {/* ====================================================================== */}
+      {/* SUCCESS MODAL - After Waitlist Signup */}
+      {/* ====================================================================== */}
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center px-5">
-          <div className="bg-white border border-[#e5e5e5] max-w-lg w-full p-12 relative shadow-2xl">
+          <div className="bg-white border border-[#e5e5e5] max-w-lg w-full p-12 relative shadow-2xl animate-[fadeInUp_0.3s_ease-out]">
             <button
               onClick={() => setShowSuccessModal(false)}
               className="absolute top-4 right-4 text-[#999] hover:text-black transition-colors p-2 hover:bg-[#fafafa]"
+              aria-label="Close modal"
             >
               <X size={20} />
             </button>
@@ -491,12 +755,16 @@ function App() {
         </div>
       )}
 
+      {/* ====================================================================== */}
+      {/* AUTHENTICATION MODAL */}
+      {/* ====================================================================== */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center px-5">
-          <div className="bg-white border border-[#e5e5e5] max-w-lg w-full p-12 relative shadow-2xl">
+          <div className="bg-white border border-[#e5e5e5] max-w-lg w-full p-12 relative shadow-2xl animate-[fadeInUp_0.3s_ease-out]">
             <button
               onClick={() => setShowAuthModal(false)}
               className="absolute top-4 right-4 text-[#999] hover:text-black transition-colors p-2 hover:bg-[#fafafa]"
+              aria-label="Close modal"
             >
               <X size={20} />
             </button>
